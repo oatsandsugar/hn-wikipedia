@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Hacker News front-page posts linking to Wikipedia, ranked by votes.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+  <title>Wikipedia on HN</title>
+  <style>
+    body {
+      font-family: monospace;
+      margin: 0;
+      padding: 1em;
+      max-width: 800px;
+    }
+    a { color: inherit; }
+    ol { padding-left: 2.5em; }
+    li { margin-bottom: 0.4em; }
+    .pts { display: inline-block; min-width: 4ch; text-align: right; margin-right: 0.5em; }
+    .comments { font-size: smaller; opacity: 0.6; }
+    .date { font-size: smaller; opacity: 0.6; }
+    .hn { font-size: smaller; opacity: 0.6; }
+    #error { color: red; }
+    #filters { margin-bottom: 1em; }
+    #filters button { font-family: monospace; cursor: pointer; margin-right: 0.3em; }
+    #filters button.active { font-weight: bold; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>Wikipedia on HN</h1>
+  <p>Hacker News stories linking to Wikipedia, ranked by points.</p>
+
+  <div id="filters">
+    <button class="active" data-filter="all">all time</button>
+    <button data-filter="year">this year</button>
+    <button data-filter="month">this month</button>
+    <button data-filter="week">this week</button>
+    <button data-filter="today">today</button>
+  </div>
+
+  <div id="status">Loading...</div>
+  <ol id="list"></ol>
+
+  <script>
+    var BASE = "https://hn.algolia.com/api/v1/search_by_date?query=wikipedia.org&restrictSearchableAttributes=url&tags=story&hitsPerPage=1000";
+
+    function getCutoffTimestamp(filter) {
+      var now = new Date();
+      if (filter === "year") return Math.floor(new Date(now.getFullYear(), 0, 1).getTime() / 1000);
+      if (filter === "month") return Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+      if (filter === "week") {
+        var d = new Date(now);
+        d.setDate(d.getDate() - d.getDay());
+        d.setHours(0, 0, 0, 0);
+        return Math.floor(d.getTime() / 1000);
+      }
+      if (filter === "today") return Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
+      return null;
+    }
+
+    function fetchAllPages(baseUrl) {
+      // first request to learn how many pages exist
+      return fetch(baseUrl + "&page=0")
+        .then(function (r) { return r.json(); })
+        .then(function (first) {
+          var totalPages = Math.min(first.nbPages, 100);
+          var promises = [Promise.resolve(first.hits)];
+          for (var i = 1; i < totalPages; i++) {
+            promises.push(
+              fetch(baseUrl + "&page=" + i).then(function (r) { return r.json(); }).then(function (d) { return d.hits; })
+            );
+          }
+          return Promise.all(promises).then(function (arrays) {
+            var all = [];
+            for (var j = 0; j < arrays.length; j++) all = all.concat(arrays[j]);
+            return all;
+          });
+        });
+    }
+
+    function renderHits(hits) {
+      var status = document.getElementById("status");
+      var list = document.getElementById("list");
+      list.innerHTML = "";
+
+      if (hits.length === 0) {
+        status.textContent = "No results found.";
+        return;
+      }
+
+      status.textContent = hits.length + " stories found.";
+
+      hits.forEach(function (h) {
+        var li = document.createElement("li");
+        var pts = document.createElement("span");
+        pts.className = "pts";
+        pts.textContent = h.points;
+        var link = document.createElement("a");
+        link.href = h.url;
+        link.textContent = h.title;
+        var date = document.createElement("span");
+        date.className = "date";
+        var d = new Date(h.created_at);
+        date.textContent = " (" + d.toLocaleDateString() + ")";
+        var comments = document.createElement("a");
+        comments.className = "comments";
+        comments.href = "https://news.ycombinator.com/item?id=" + h.objectID;
+        comments.textContent = " " + (h.num_comments != null ? h.num_comments : 0) + " comments";
+        li.appendChild(pts);
+        li.appendChild(link);
+        li.appendChild(date);
+        li.appendChild(document.createTextNode(" "));
+        li.appendChild(comments);
+        list.appendChild(li);
+      });
+    }
+
+    function loadAndRender(filter) {
+      var status = document.getElementById("status");
+      status.textContent = "Loading...";
+      document.getElementById("list").innerHTML = "";
+
+      var url = BASE;
+      var ts = getCutoffTimestamp(filter);
+      if (ts) url += "&numericFilters=created_at_i>" + ts;
+
+      fetchAllPages(url)
+        .then(function (hits) {
+          // dedupe by objectID
+          var seen = {};
+          hits = hits.filter(function (h) {
+            if (seen[h.objectID]) return false;
+            seen[h.objectID] = true;
+            return true;
+          });
+          hits.sort(function (a, b) { return b.points - a.points; });
+          renderHits(hits);
+        })
+        .catch(function (err) {
+          status.id = "error";
+          status.textContent = "Failed to load: " + err.message;
+        });
+    }
+
+    document.getElementById("filters").addEventListener("click", function (e) {
+      if (e.target.tagName !== "BUTTON") return;
+      var buttons = document.querySelectorAll("#filters button");
+      for (var i = 0; i < buttons.length; i++) buttons[i].className = "";
+      e.target.className = "active";
+      loadAndRender(e.target.getAttribute("data-filter"));
+    });
+
+    loadAndRender("all");
+  </script>
+
+  <hr>
+  <p><small><a href="https://github.com/oatsandsugar/hn-wikipedia">Source</a> · Data from <a href="https://hn.algolia.com/api">HN Algolia API</a></small></p>
+</body>
+</html>
