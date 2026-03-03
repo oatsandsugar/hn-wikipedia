@@ -25,6 +25,9 @@
     #filters { margin-bottom: 1em; }
     #filters button { font-family: monospace; cursor: pointer; margin-right: 0.3em; }
     #filters button.active { font-weight: bold; text-decoration: underline; }
+    #minfilters { margin-bottom: 1em; }
+    #minfilters label { margin-right: 1em; }
+    #minfilters input[type="number"] { font-family: monospace; width: 6ch; }
   </style>
 </head>
 <body>
@@ -39,11 +42,17 @@
     <button data-filter="today">today</button>
   </div>
 
+  <div id="minfilters">
+    <label>min points <input type="number" id="minpts" min="0" value="0"></label>
+    <label>min comments <input type="number" id="mincomments" min="0" placeholder="0"></label>
+  </div>
+
   <div id="status">Loading...</div>
   <ol id="list"></ol>
 
   <script>
     var BASE = "https://hn.algolia.com/api/v1/search_by_date?query=wikipedia.org&restrictSearchableAttributes=url&tags=story&hitsPerPage=1000";
+    var cachedHits = [];
 
     function getCutoffTimestamp(filter) {
       var now = new Date();
@@ -84,12 +93,19 @@
       var list = document.getElementById("list");
       list.innerHTML = "";
 
-      if (hits.length === 0) {
-        status.textContent = "No results found.";
+      var minPts = parseInt(document.getElementById("minpts").value, 10) || 0;
+      var minComments = parseInt(document.getElementById("mincomments").value, 10) || 0;
+      var filtered = hits.filter(function (h) {
+        return h.points >= minPts && (h.num_comments || 0) >= minComments;
+      });
+
+      if (filtered.length === 0) {
+        status.textContent = "No results found (" + hits.length + " before filters).";
         return;
       }
 
-      status.textContent = hits.length + " stories found.";
+      status.textContent = filtered.length + " of " + hits.length + " stories shown.";
+      hits = filtered;
 
       hits.forEach(function (h) {
         var li = document.createElement("li");
@@ -135,6 +151,7 @@
             return true;
           });
           hits.sort(function (a, b) { return b.points - a.points; });
+          cachedHits = hits;
           renderHits(hits);
         })
         .catch(function (err) {
@@ -150,6 +167,9 @@
       e.target.className = "active";
       loadAndRender(e.target.getAttribute("data-filter"));
     });
+
+    document.getElementById("minpts").addEventListener("input", function () { renderHits(cachedHits); });
+    document.getElementById("mincomments").addEventListener("input", function () { renderHits(cachedHits); });
 
     loadAndRender("all");
   </script>
