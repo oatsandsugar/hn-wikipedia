@@ -43,7 +43,7 @@
   </div>
 
   <div id="minfilters">
-    <label>min points <input type="number" id="minpts" min="0" value="0"></label>
+    <label>min points <input type="number" id="minpts" min="0" value="100"></label>
     <label>min comments <input type="number" id="mincomments" min="0" placeholder="0"></label>
   </div>
 
@@ -52,7 +52,8 @@
 
   <script>
     var BASE = "https://hn.algolia.com/api/v1/search_by_date?query=wikipedia.org&restrictSearchableAttributes=url&tags=story&hitsPerPage=1000";
-    var cachedHits = [];
+    var activeFilter = "all";
+    var debounceTimer = null;
 
     function getCutoffTimestamp(filter) {
       var now = new Date();
@@ -93,19 +94,12 @@
       var list = document.getElementById("list");
       list.innerHTML = "";
 
-      var minPts = parseInt(document.getElementById("minpts").value, 10) || 0;
-      var minComments = parseInt(document.getElementById("mincomments").value, 10) || 0;
-      var filtered = hits.filter(function (h) {
-        return h.points >= minPts && (h.num_comments || 0) >= minComments;
-      });
-
-      if (filtered.length === 0) {
-        status.textContent = "No results found (" + hits.length + " before filters).";
+      if (hits.length === 0) {
+        status.textContent = "No results found.";
         return;
       }
 
-      status.textContent = filtered.length + " of " + hits.length + " stories shown.";
-      hits = filtered;
+      status.textContent = hits.length + " stories found.";
 
       hits.forEach(function (h) {
         var li = document.createElement("li");
@@ -139,7 +133,13 @@
 
       var url = BASE;
       var ts = getCutoffTimestamp(filter);
-      if (ts) url += "&numericFilters=created_at_i>" + ts;
+      var numericFilters = [];
+      if (ts) numericFilters.push("created_at_i>" + ts);
+      var minPts = parseInt(document.getElementById("minpts").value, 10) || 0;
+      var minComments = parseInt(document.getElementById("mincomments").value, 10) || 0;
+      if (minPts > 0) numericFilters.push("points>" + (minPts - 1));
+      if (minComments > 0) numericFilters.push("num_comments>" + (minComments - 1));
+      if (numericFilters.length) url += "&numericFilters=" + numericFilters.join(",");
 
       fetchAllPages(url)
         .then(function (hits) {
@@ -151,7 +151,6 @@
             return true;
           });
           hits.sort(function (a, b) { return b.points - a.points; });
-          cachedHits = hits;
           renderHits(hits);
         })
         .catch(function (err) {
@@ -165,11 +164,17 @@
       var buttons = document.querySelectorAll("#filters button");
       for (var i = 0; i < buttons.length; i++) buttons[i].className = "";
       e.target.className = "active";
-      loadAndRender(e.target.getAttribute("data-filter"));
+      activeFilter = e.target.getAttribute("data-filter");
+      document.getElementById("minpts").value = activeFilter === "all" ? 100 : 0;
+      loadAndRender(activeFilter);
     });
 
-    document.getElementById("minpts").addEventListener("input", function () { renderHits(cachedHits); });
-    document.getElementById("mincomments").addEventListener("input", function () { renderHits(cachedHits); });
+    function debouncedReload() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () { loadAndRender(activeFilter); }, 400);
+    }
+    document.getElementById("minpts").addEventListener("input", debouncedReload);
+    document.getElementById("mincomments").addEventListener("input", debouncedReload);
 
     loadAndRender("all");
   </script>
