@@ -22,6 +22,7 @@
     .date { font-size: smaller; opacity: 0.6; }
     .hn { font-size: smaller; opacity: 0.6; }
     #error { color: red; }
+    #warning { color: red; font-size: smaller; margin-bottom: 1em; }
     #filters { margin-bottom: 1em; }
     #filters button { font-family: monospace; cursor: pointer; margin-right: 0.3em; }
     #filters button.active { font-weight: bold; text-decoration: underline; }
@@ -46,6 +47,7 @@
     <label>min points <input type="number" id="minpts" min="0" value="100"></label>
     <label>min comments <input type="number" id="mincomments" min="0" placeholder="0"></label>
   </div>
+  <div id="warning"></div>
 
   <div id="status">Loading...</div>
   <ol id="list"></ol>
@@ -69,8 +71,7 @@
       return null;
     }
 
-    function fetchAllPages(baseUrl) {
-      // first request to learn how many pages exist
+    function fetchBatch(baseUrl) {
       return fetch(baseUrl + "&page=0")
         .then(function (r) { return r.json(); })
         .then(function (first) {
@@ -84,9 +85,34 @@
           return Promise.all(promises).then(function (arrays) {
             var all = [];
             for (var j = 0; j < arrays.length; j++) all = all.concat(arrays[j]);
-            return all;
+            return { hits: all, nbHits: first.nbHits };
           });
         });
+    }
+
+    function fetchAllByTime(baseUrl, statusEl) {
+      var allHits = [];
+      function fetchChunk(ceiling) {
+        var url = baseUrl;
+        if (ceiling) {
+          url += (url.indexOf("numericFilters=") !== -1 ? "," : "&numericFilters=") + "created_at_i<" + ceiling;
+        }
+        return fetchBatch(url).then(function (result) {
+          allHits = allHits.concat(result.hits);
+          statusEl.textContent = "Loading... " + allHits.length + " stories so far";
+          if (result.hits.length < 1000 || result.nbHits <= 1000) {
+            return allHits;
+          }
+          // find oldest timestamp in this batch as new ceiling
+          var oldest = Infinity;
+          for (var i = 0; i < result.hits.length; i++) {
+            var t = new Date(result.hits[i].created_at).getTime() / 1000;
+            if (t < oldest) oldest = t;
+          }
+          return fetchChunk(Math.floor(oldest));
+        });
+      }
+      return fetchChunk(null);
     }
 
     function renderHits(hits) {
@@ -141,7 +167,17 @@
       if (minComments > 0) numericFilters.push("num_comments>" + (minComments - 1));
       if (numericFilters.length) url += "&numericFilters=" + numericFilters.join(",");
 
-      fetchAllPages(url)
+      var warning = document.getElementById("warning");
+      warning.textContent = "";
+
+      fetchBatch(url)
+        .then(function (result) {
+          if (result.nbHits > 1000) {
+            warning.textContent = "~" + result.nbHits + " results — fetching all, this may be slow...";
+            return fetchAllByTime(url, status);
+          }
+          return result.hits;
+        })
         .then(function (hits) {
           // dedupe by objectID
           var seen = {};
