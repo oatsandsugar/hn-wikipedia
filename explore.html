@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Wikipedia on HN — Clusters</title>
+  <style>
+    body {
+      font-family: monospace;
+      margin: 0;
+      padding: 1em;
+      max-width: 800px;
+    }
+    a { color: inherit; }
+    .cluster { margin-bottom: 0.15em; }
+    .cluster-header {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      padding: 0.25em 0;
+      gap: 0.6em;
+    }
+    .cluster-name { cursor: pointer; }
+    .cluster-name::before { content: '▸ '; font-size: 0.8em; }
+    .cluster.open .cluster-name::before { content: '▾ '; }
+    .cluster-header:hover .cluster-name { text-decoration: underline; }
+    .cluster-name {
+      font-size: smaller;
+      width: 200px;
+      flex-shrink: 0;
+      text-align: left;
+    }
+    .bar-wrap {
+      flex: 1;
+      height: 1em;
+      position: relative;
+    }
+    .bar {
+      height: 100%;
+      background: currentColor;
+      opacity: 0.25;
+      min-width: 1px;
+    }
+    .bar-label {
+      font-size: smaller;
+      opacity: 0.6;
+      margin-left: 0.4em;
+      white-space: nowrap;
+      line-height: 1em;
+    }
+    .cluster-count {
+      font-size: smaller;
+      opacity: 0.6;
+      width: 3em;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .articles {
+      display: none;
+      margin: 0.3em 0 1em;
+      padding-left: 4em;
+    }
+    .articles.open { display: block; }
+    .article {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5em;
+      padding: 0.15em 0;
+    }
+    .article .pts {
+      display: inline-block;
+      min-width: 4ch;
+      text-align: right;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .article .comments {
+      font-size: smaller;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .article .date {
+      font-size: smaller;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .sort-controls {
+      margin-bottom: 1em;
+    }
+    .sort-controls button {
+      font-family: monospace;
+      cursor: pointer;
+      margin-right: 0.3em;
+    }
+    .sort-controls button.active {
+      font-weight: bold;
+      text-decoration: underline;
+    }
+    @media (max-width: 600px) {
+      .cluster-header { flex-wrap: wrap; gap: 0.2em; }
+      .cluster-name { width: auto; flex-basis: calc(100% - 4em); }
+      .cluster-count { order: -1; }
+      .bar-wrap { flex-basis: 100%; order: 3; }
+      .bar-label { order: 4; }
+      .articles { padding-left: 1em; }
+      .article { flex-wrap: wrap; gap: 0.2em; }
+      .article .comments, .article .date { font-size: smaller; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Wikipedia on HN — Clusters</h1>
+  <p>883 Wikipedia articles with 100+ points, grouped into 64 topic clusters by semantic similarity.</p>
+  <p>Click a cluster to explore. <a href="index.html">Back to main list</a>.</p>
+
+  <div class="sort-controls">
+    <button class="active" data-sort="total">total points</button>
+    <button data-sort="avg">avg points</button>
+    <button data-sort="count">article count</button>
+  </div>
+
+  <div id="clusters"></div>
+
+  <hr>
+  <p><small>Data collected March 4, 2026. Clustered via UMAP + HDBSCAN on OpenAI embeddings of Wikipedia titles and intros. <a href="index.html">Back to main list</a> · <a href="https://github.com/oatsandsugar/hn-wikipedia">Source</a></small></p>
+
+<script>
+function init(data, labels) {
+  var clusters = {};
+  for (var i = 0; i < data.length; i++) {
+    var k = data[i].k;
+    if (!clusters[k]) clusters[k] = [];
+    clusters[k].push(data[i]);
+  }
+
+  var stats = [];
+  for (var k in clusters) {
+    if (parseInt(k) === -1) continue;
+    var items = clusters[k];
+    var total = 0;
+    for (var j = 0; j < items.length; j++) total += items[j].p;
+    stats.push({
+      k: k,
+      label: labels[k] || 'Cluster ' + k,
+      items: items.sort(function(a,b){ return b.p - a.p; }),
+      total: total,
+      avg: Math.round(total / items.length),
+      count: items.length
+    });
+  }
+
+  if (clusters['-1'] || clusters[-1]) {
+    var unc = clusters['-1'] || clusters[-1];
+    var total = 0;
+    for (var j = 0; j < unc.length; j++) total += unc[j].p;
+    stats.push({
+      k: '-1',
+      label: 'Unclustered',
+      items: unc.sort(function(a,b){ return b.p - a.p; }),
+      total: total,
+      avg: Math.round(total / unc.length),
+      count: unc.length
+    });
+  }
+
+  var container = document.getElementById('clusters');
+  var currentSort = 'total';
+
+  function sortStats(by) {
+    stats.sort(function(a,b) {
+      if (a.k === '-1') return 1;
+      if (b.k === '-1') return -1;
+      if (by === 'total') return b.total - a.total;
+      if (by === 'avg') return b.avg - a.avg;
+      if (by === 'count') return b.count - a.count;
+      return 0;
+    });
+  }
+
+  function render() {
+    var maxVal = 0;
+    for (var i = 0; i < stats.length; i++) {
+      if (stats[i].k === '-1') continue;
+      var val = currentSort === 'avg' ? stats[i].avg : stats[i].total;
+      if (val > maxVal) maxVal = val;
+    }
+
+    container.innerHTML = '';
+    for (var i = 0; i < stats.length; i++) {
+      var s = stats[i];
+      var barVal = currentSort === 'avg' ? s.avg : s.total;
+      var barPct = Math.min(100, (barVal / maxVal * 100)).toFixed(1);
+      var overflow = barVal > maxVal;
+      if (overflow) barPct = 100;
+      var barLabel = currentSort === 'avg'
+        ? s.avg + ' avg'
+        : s.total.toLocaleString() + ' pts';
+
+      var div = document.createElement('div');
+      div.className = 'cluster';
+      div.innerHTML =
+        '<div class="cluster-header" data-idx="' + i + '">' +
+          '<span class="cluster-count">' + s.count + '</span>' +
+          '<span class="cluster-name">' + esc(s.label) + '</span>' +
+          '<div class="bar-wrap"><div class="bar" style="width:' + barPct + '%"></div></div>' +
+          '<span class="bar-label">' + (overflow ? '... ' : '') + barLabel + '</span>' +
+        '</div>' +
+        '<div class="articles" data-idx="' + i + '">' +
+          s.items.map(function(d) {
+            return '<div class="article">' +
+              '<span class="pts">' + d.p + '</span>' +
+              '<a href="' + escAttr(d.u) + '" target="_blank">' + esc(d.t) + '</a> ' +
+              '<span class="comments">' + d.c + ' comments</span> ' +
+              '<span class="date">(' + d.d + ')</span>' +
+            '</div>';
+          }).join('') +
+        '</div>';
+      container.appendChild(div);
+    }
+  }
+
+  container.addEventListener('click', function(e) {
+    var header = e.target.closest('.cluster-header');
+    if (!header) return;
+    var idx = header.getAttribute('data-idx');
+    var cluster = header.closest('.cluster');
+    var articles = cluster.querySelector('.articles');
+    if (articles) { articles.classList.toggle('open'); cluster.classList.toggle('open'); }
+  });
+
+  document.querySelector('.sort-controls').addEventListener('click', function(e) {
+    if (e.target.tagName !== 'BUTTON') return;
+    var buttons = document.querySelectorAll('.sort-controls button');
+    for (var i = 0; i < buttons.length; i++) buttons[i].className = '';
+    e.target.className = 'active';
+    currentSort = e.target.getAttribute('data-sort');
+    sortStats(currentSort);
+    render();
+  });
+
+  function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''; }
+  function escAttr(s) { return s ? s.replace(/&/g,'&amp;').replace(/"/g,'&quot;') : ''; }
+
+  sortStats('total');
+  render();
+}
+</script>
+<script src="data.js"></script>
+<script>init(_d, _l);</script>
+</body>
+</html>

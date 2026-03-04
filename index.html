@@ -29,11 +29,15 @@
     #minfilters { margin-bottom: 1em; }
     #minfilters label { margin-right: 1em; }
     #minfilters input[type="number"] { font-family: monospace; width: 6ch; }
+    @media (max-width: 600px) {
+      #filters button { margin-bottom: 0.3em; }
+      #minfilters label { display: block; margin-bottom: 0.3em; }
+    }
   </style>
 </head>
 <body>
   <h1>Wikipedia on HN</h1>
-  <p>Hacker News stories linking to Wikipedia, ranked by points.</p>
+  <p>Hacker News stories linking to Wikipedia, ranked by points. <a href="explore.html">Explore by topic cluster</a>.</p>
 
   <div id="filters">
     <button class="active" data-filter="all">all time</button>
@@ -216,6 +220,6 @@
   </script>
 
   <hr>
-  <p><small><a href="https://github.com/oatsandsugar/hn-wikipedia">Source</a> · Data from <a href="https://hn.algolia.com/api">HN Algolia API</a></small></p>
+  <p><small><a href="explore.html">Explore by topic cluster</a> · <a href="https://github.com/oatsandsugar/hn-wikipedia">Source</a> · Data from <a href="https://hn.algolia.com/api">HN Algolia API</a></small></p>
 </body>
 </html>
